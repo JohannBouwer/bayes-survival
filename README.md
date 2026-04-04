@@ -211,9 +211,9 @@ S_u(t | x) = Φ(-z),   z = (log(t) - (γ + X·δ)) / σ
 
 | Parameter | Role | Default prior |
 |-----------|------|---------------|
-| `alpha` | Intercept for susceptibility logit | `Normal(μ=0, σ=3)` |
+| `alpha` | Intercept for susceptibility logit | `Normal(μ=0, σ=1)` |
 | `beta_cure` | Covariate effects on susceptibility logit | `Normal(μ=0, σ=3)` |
-| `gamma` | Intercept for log-normal log-mean | `Normal(μ=0, σ=3)` |
+| `gamma` | Intercept for log-normal log-mean | `Normal(μ=0, σ=1)` |
 | `delta` | Covariate effects on log-mean | `Normal(μ=0, σ=2)` |
 | `sigma` | Spread of log-event times (susceptibles) | `HalfNormal(σ=1)` |
 
@@ -222,6 +222,47 @@ from bayes_survival.survival_models.cure import LogNormalCureModel
 import numpy as np
 
 model = LogNormalCureModel()
+model.fit(X_train, t_train, event_train, draws=1000, tune=1000, chains=4)
+
+# Mixture survival function (accounts for cure fraction)
+pred = model.predict_survival_function(X_test, times=np.linspace(0.1, 36, 200))
+pred.mean        # (n_obs, n_times) — plateaus at 1 - π for cured individuals
+pred.hdi_lower   # (n_obs, n_times)
+pred.hdi_upper   # (n_obs, n_times)
+
+# Posterior estimate of P(cured | x) = 1 - π(x)
+cure = model.predict_cure_probability(X_test)
+cure.mean        # (n_obs,)
+cure.hdi_lower   # (n_obs,)
+cure.hdi_upper   # (n_obs,)
+
+# Posterior predictive event times; cured individuals receive np.inf
+samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
+```
+
+#### `WeibullCureModel`
+
+Weibull timing distribution for the susceptible subgroup:
+
+```
+S_u(t | x) = exp(-(t / λ(x))^shape),   λ(x) = exp(γ + X·δ)
+```
+
+| Parameter | Role | Default prior |
+|-----------|------|---------------|
+| `alpha` | Intercept for susceptibility logit | `Normal(μ=0, σ=1)` |
+| `beta_cure` | Covariate effects on susceptibility logit | `Normal(μ=0, σ=3)` |
+| `gamma` | Intercept for Weibull log-scale | `Normal(μ=0, σ=1)` |
+| `delta` | Covariate effects on Weibull log-scale | `Normal(μ=0, σ=2)` |
+| `shape` | Weibull shape (shape > 1: increasing hazard) | `Gamma(α=5, β=2)` |
+
+Note: the Weibull shape is named `shape` rather than `alpha` to avoid collision with the cure sub-model intercept `alpha`.
+
+```python
+from bayes_survival.survival_models.cure import WeibullCureModel
+import numpy as np
+
+model = WeibullCureModel()
 model.fit(X_train, t_train, event_train, draws=1000, tune=1000, chains=4)
 
 # Mixture survival function (accounts for cure fraction)
@@ -254,5 +295,4 @@ where `h_0(t)` is a baseline hazard and `β` are the log-hazard coefficients. Un
 
 ### Additional Mixture Cure Models
 
-- `WeibullCureModel` — Weibull AFT for the susceptible component + logistic cure fraction, complementing the existing `LogNormalCureModel`
 - Shared cure-fraction interface so nonparametric and parametric timing components can be mixed freely
