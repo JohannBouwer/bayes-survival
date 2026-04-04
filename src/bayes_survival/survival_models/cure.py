@@ -39,9 +39,9 @@ class LogNormalCureModel(BaseSurvivalModel):
     """
 
     default_priors: ClassVar[PriorSpec] = {
-        "alpha": (pm.Normal, {"mu": 0, "sigma": 3}),
+        "alpha": (pm.Normal, {"mu": 0, "sigma": 1}),
         "beta_cure": (pm.Normal, {"mu": 0, "sigma": 3}),
-        "gamma": (pm.Normal, {"mu": 0, "sigma": 3}),
+        "gamma": (pm.Normal, {"mu": 0, "sigma": 1}),
         "delta": (pm.Normal, {"mu": 0, "sigma": 2}),
         "sigma": (pm.HalfNormal, {"sigma": 1}),
     }
