@@ -9,9 +9,6 @@ Bayesian survival analysis models built on [PyMC](https://www.pymc.io/), with co
 
 This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
 
-> [!IMPORTANT]
-> Do not install dependencies one by one with `uv add` or `pip install`. PyMC, JAX, and NumPyro have tightly coupled version constraints that only resolve correctly when the full dependency set is solved together. Installing packages individually will produce an inconsistent environment that is likely to break at import time.
-
 ### Core library
 
 ```bash
@@ -41,6 +38,10 @@ uv sync --extra dev
 ```bash
 uv sync --all-extras
 ```
+
+> [!IMPORTANT]
+> Do not install dependencies one by one, each `uv sync --option` will overwrite the previous one
+
 
 ---
 
