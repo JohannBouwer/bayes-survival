@@ -8,6 +8,7 @@ Bayesian survival analysis models built on [PyMC](https://www.pymc.io/), with co
 
 This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
 
+[!NOTE]
 > **Important:** Do not install dependencies one by one with `uv add` or `pip install`. PyMC, JAX, and NumPyro have tightly coupled version constraints that only resolve correctly when the full dependency set is solved together. Installing packages individually will produce an inconsistent environment that is likely to break at import time.
 
 ### Core library
@@ -295,4 +296,5 @@ where `h_0(t)` is a baseline hazard and `β` are the log-hazard coefficients. Un
 
 ### Additional Mixture Cure Models
 
+- Use `pymc-BART` as the classifier to allow for non-parametric modelling.
 - Shared cure-fraction interface so nonparametric and parametric timing components can be mixed freely
