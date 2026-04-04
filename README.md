@@ -1,5 +1,6 @@
 # bayes-survival
 
+> [!NOTE]
 > **Heads up:** This is a project I completed for my own development / learning. The models work and have been tested, but no claims are made about production-readiness, computational efficiency, or suitability for any particular use case.
 
 Bayesian survival analysis models built on [PyMC](https://www.pymc.io/), with comparisons against [lifelines](https://lifelines.readthedocs.io/) frequentist equivalents. Inspired by [pymc-survival](https://github.com/pymc-labs/pymc-survival).
@@ -8,8 +9,8 @@ Bayesian survival analysis models built on [PyMC](https://www.pymc.io/), with co
 
 This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
 
-[!NOTE]
-> **Important:** Do not install dependencies one by one with `uv add` or `pip install`. PyMC, JAX, and NumPyro have tightly coupled version constraints that only resolve correctly when the full dependency set is solved together. Installing packages individually will produce an inconsistent environment that is likely to break at import time.
+> [!IMPORTANT]
+> Do not install dependencies one by one with `uv add` or `pip install`. PyMC, JAX, and NumPyro have tightly coupled version constraints that only resolve correctly when the full dependency set is solved together. Installing packages individually will produce an inconsistent environment that is likely to break at import time.
 
 ### Core library
 
