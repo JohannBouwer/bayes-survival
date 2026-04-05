@@ -149,6 +149,40 @@ S(t | x) = Φ((Xβ - log(t)) / σ)
 | `beta` | Log-mean coefficients (+ intercept) | `Normal(μ=0, σ=5)` |
 | `sigma` | Spread of log-event times | `Gamma(α=5, β=2)` |
 
+## Usage
+
+```python
+from bayes_survival.survival_models.aft import WeibullAFTModel, LogNormalAFTModel
+import numpy as np
+
+# Inspect default priors before fitting
+WeibullAFTModel.default_priors
+# {'alpha': (Gamma, {'alpha': 5, 'beta': 2}), 'beta': (Normal, {'mu': 0, 'sigma': 5})}
+
+# Fit with defaults
+model = WeibullAFTModel()
+model.fit(X_train, t_train, event_train, draws=1000, tune=1000, chains=4)
+
+# Override a prior
+model = WeibullAFTModel(priors={"alpha": (pm.HalfNormal, {"sigma": 1})})
+
+# Survival function: returns mean + 95% HDI over a time grid
+pred = model.predict_survival_function(X_test, times=np.linspace(0.1, 36, 200))
+pred.mean        # (n_obs, n_times)
+pred.hdi_lower   # (n_obs, n_times)
+pred.hdi_upper   # (n_obs, n_times)
+
+# Survival probability at a single time point
+model.survival_probability(X_test, t=12.0)
+
+# Conditional probability of event before T given survival to t
+model.conditional_event_probability(X_test, t=6.0, T=24.0)
+
+# Posterior predictive event time distribution (full distribution per individual)
+samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
+```
+
+
 ### Cox Proportional Hazards
 
 #### `PiecewiseCoxPHModel`
@@ -198,39 +232,6 @@ model.survival_probability(X_test, t=12.0)
 model.conditional_event_probability(X_test, t=6.0, T=24.0)
 
 # Posterior predictive event times via piecewise-exponential inverse CDF
-samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
-```
-
-## Usage
-
-```python
-from bayes_survival.survival_models.aft import WeibullAFTModel, LogNormalAFTModel
-import numpy as np
-
-# Inspect default priors before fitting
-WeibullAFTModel.default_priors
-# {'alpha': (Gamma, {'alpha': 5, 'beta': 2}), 'beta': (Normal, {'mu': 0, 'sigma': 5})}
-
-# Fit with defaults
-model = WeibullAFTModel()
-model.fit(X_train, t_train, event_train, draws=1000, tune=1000, chains=4)
-
-# Override a prior
-model = WeibullAFTModel(priors={"alpha": (pm.HalfNormal, {"sigma": 1})})
-
-# Survival function: returns mean + 95% HDI over a time grid
-pred = model.predict_survival_function(X_test, times=np.linspace(0.1, 36, 200))
-pred.mean        # (n_obs, n_times)
-pred.hdi_lower   # (n_obs, n_times)
-pred.hdi_upper   # (n_obs, n_times)
-
-# Survival probability at a single time point
-model.survival_probability(X_test, t=12.0)
-
-# Conditional probability of event before T given survival to t
-model.conditional_event_probability(X_test, t=6.0, T=24.0)
-
-# Posterior predictive event time distribution (full distribution per individual)
 samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
 ```
 
