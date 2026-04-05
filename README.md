@@ -149,6 +149,58 @@ S(t | x) = Φ((Xβ - log(t)) / σ)
 | `beta` | Log-mean coefficients (+ intercept) | `Normal(μ=0, σ=5)` |
 | `sigma` | Spread of log-event times | `Gamma(α=5, β=2)` |
 
+### Cox Proportional Hazards
+
+#### `PiecewiseCoxPHModel`
+
+A piecewise-constant Bayesian Cox PH model. The hazard is:
+
+```
+h(t | x) = h_0(t) · exp(Xβ)
+```
+
+where `h_0(t)` is piecewise constant over `K` intervals and `log h_0` follows a Gaussian Random Walk across intervals (smoothness prior). No intercept is added to `β`; the baseline hazard absorbs it.
+
+Fitting uses the Poisson likelihood equivalence: data are expanded to long format (one row per observation-interval pair while at risk) and event counts are modelled as Poisson with rate `h_k · exp(Xβ) · exposure`.
+
+Cut points can be supplied explicitly or placed automatically at evenly-spaced quantiles of the observed event times.
+
+| Parameter | Role | Default prior |
+|-----------|------|---------------|
+| `log_baseline` | Log baseline hazard per interval (GRW) | `GaussianRandomWalk(sigma=grw_sigma)` |
+| `grw_sigma` | Random-walk step-size (smoothness) | `HalfNormal(σ=1)` |
+| `beta` | Log-hazard coefficients | `Normal(μ=0, σ=1)` |
+
+```python
+from bayes_survival.survival_models.cox_hazard import PiecewiseCoxPHModel
+import numpy as np
+
+# Automatic cut points at event-time quantiles
+model = PiecewiseCoxPHModel(n_intervals=10)
+model.fit(X_train, t_train, event_train, draws=1000, tune=1000, chains=4)
+
+# Or supply explicit interior cut points
+model = PiecewiseCoxPHModel(cuts=[6.0, 12.0, 24.0])
+
+# Override priors
+model = PiecewiseCoxPHModel(n_intervals=10, priors={"beta": (pm.Normal, {"mu": 0, "sigma": 0.5})})
+
+# Survival function: mean + 94% HDI
+pred = model.predict_survival_function(X_test, times=np.linspace(0.1, 36, 200))
+pred.mean        # (n_obs, n_times)
+pred.hdi_lower   # (n_obs, n_times)
+pred.hdi_upper   # (n_obs, n_times)
+
+# Survival probability at a single time point
+model.survival_probability(X_test, t=12.0)
+
+# Conditional probability of event before T given survival to t
+model.conditional_event_probability(X_test, t=6.0, T=24.0)
+
+# Posterior predictive event times via piecewise-exponential inverse CDF
+samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
+```
+
 ## Usage
 
 ```python
@@ -286,17 +338,7 @@ samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
 
 ## Future Work
 
-### Cox Proportional Hazards Model
-
-A Bayesian Cox PH model would complement the AFT models by working directly on the hazard scale rather than the time scale:
-
-```
-h(t | x) = h_0(t) · exp(Xβ)
-```
-
-where `h_0(t)` is a baseline hazard and `β` are the log-hazard coefficients. Unlike AFT models, Cox PH makes no parametric assumption about the shape of `h_0(t)`. A Bayesian implementation could place a Gaussian process or piecewise-constant prior on `h_0(t)`, with NUTS sampling via PyMC.
-
 ### Additional Mixture Cure Models
 
-- Use `pymc-BART` as the classifier to allow for non-parametric modelling.
+- Use [pymc-BART](https://www.pymc.io/projects/bart/en/latest/) as the classifier to allow for non-parametric modelling.
 - Shared cure-fraction interface so nonparametric and parametric timing components can be mixed freely

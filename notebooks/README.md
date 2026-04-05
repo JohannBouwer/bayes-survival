@@ -52,7 +52,19 @@ No model fitting is performed here. The goal is to build intuition before the mo
 
 ---
 
-## 5. [Cure_Introduction.ipynb](Cure_Introduction.ipynb)
+## 5. [CoxPH_Introduction.ipynb](CoxPH_Introduction.ipynb)
+
+**Piecewise-constant Bayesian Cox PH model — hazard-scale regression.**
+
+- Introduces the proportional hazards model $h(t \mid x) = h_0(t) \cdot \exp(X\beta)$ and contrasts it with AFT models, which act on the time scale rather than the hazard scale
+- Derives the Poisson likelihood equivalence used to fit piecewise-constant Cox models and explains the data expansion to long format
+- Shows how a Gaussian Random Walk prior on $\log h_0$ encodes smoothness across intervals without fixing the shape of the baseline hazard
+- Fits `bayes_survival.PiecewiseCoxPHModel` and `lifelines.CoxPHFitter` to the leukemia dataset; compares log-hazard coefficients and survival curves
+- Demonstrates sensitivity to the number of intervals and the GRW step-size prior
+
+---
+
+## 6. [Cure_Introduction.ipynb](Cure_Introduction.ipynb)
 
 **Mixture cure model — covariate-dependent cure fractions.**
 
