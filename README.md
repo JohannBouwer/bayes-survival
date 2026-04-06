@@ -149,10 +149,23 @@ S(t | x) = Φ((Xβ - log(t)) / σ)
 | `beta` | Log-mean coefficients (+ intercept) | `Normal(μ=0, σ=5)` |
 | `sigma` | Spread of log-event times | `Gamma(α=5, β=2)` |
 
+#### `LogLogisticAFTModel`
+
+```
+S(t | x) = 1 / (1 + (t / exp(Xβ))^α)
+```
+
+The hazard is non-monotonic (rises then falls), making this model suitable when event rates peak at some intermediate time. Fitted via the log-time reparameterization: `log(T) | x ~ Logistic(μ=Xβ, s=1/α)`.
+
+| Parameter | Role | Default prior |
+|-----------|------|---------------|
+| `beta` | Log-scale coefficients (+ intercept) | `Normal(μ=0, σ=5)` |
+| `alpha` | Shape — controls both tail heaviness and hazard peak location | `Gamma(α=5, β=2)` |
+
 ## Usage
 
 ```python
-from bayes_survival.survival_models.aft import WeibullAFTModel, LogNormalAFTModel
+from bayes_survival.survival_models.aft import WeibullAFTModel, LogNormalAFTModel, LogLogisticAFTModel
 import numpy as np
 
 # Inspect default priors before fitting
@@ -337,9 +350,56 @@ cure.hdi_upper   # (n_obs,)
 samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
 ```
 
+#### `LogLogisticCureModel`
+
+Log-logistic timing distribution for the susceptible subgroup:
+
+```
+S_u(t | x) = 1 / (1 + (t / λ(x))^shape),   λ(x) = exp(γ + X·δ)
+```
+
+The log-logistic hazard is non-monotonic (rises then falls), making this model appropriate when susceptible subjects face a peak event rate at some intermediate time rather than a monotonically increasing or decreasing risk.
+
+| Parameter | Role | Default prior |
+|-----------|------|---------------|
+| `alpha` | Intercept for susceptibility logit | `Normal(μ=0, σ=1)` |
+| `beta_cure` | Covariate effects on susceptibility logit | `Normal(μ=0, σ=3)` |
+| `gamma` | Intercept for log-logistic log-scale | `Normal(μ=0, σ=1)` |
+| `delta` | Covariate effects on log-scale | `Normal(μ=0, σ=2)` |
+| `shape` | Log-logistic shape (controls tail heaviness and hazard peak) | `Gamma(α=5, β=2)` |
+
+Note: the shape parameter is named `shape` rather than `alpha` to avoid collision with the cure sub-model intercept `alpha`.
+
+```python
+from bayes_survival.survival_models.cure import LogLogisticCureModel
+import numpy as np
+
+model = LogLogisticCureModel()
+model.fit(X_train, t_train, event_train, draws=1000, tune=1000, chains=4)
+
+# Mixture survival function (accounts for cure fraction)
+pred = model.predict_survival_function(X_test, times=np.linspace(0.1, 36, 200))
+pred.mean        # (n_obs, n_times) — plateaus at 1 - π for cured individuals
+pred.hdi_lower   # (n_obs, n_times)
+pred.hdi_upper   # (n_obs, n_times)
+
+# Posterior estimate of P(cured | x) = 1 - π(x)
+cure = model.predict_cure_probability(X_test)
+cure.mean        # (n_obs,)
+cure.hdi_lower   # (n_obs,)
+cure.hdi_upper   # (n_obs,)
+
+# Posterior predictive event times; cured individuals receive np.inf
+samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
+```
+
 ## Future Work
+
+### Hierarchical / Multi-Level Survival Models
+
+- Allow for groups of covariates to share a hyper-prior, enabling information sharing when some variables are sparsely present in the data.
 
 ### Additional Mixture Cure Models
 
 - Use [pymc-BART](https://www.pymc.io/projects/bart/en/latest/) as the classifier to allow for non-parametric modelling.
-- Shared cure-fraction interface so nonparametric and parametric timing components can be mixed freely
+- Shared cure mixture interface so different classifying and timing components can be mixed freely
