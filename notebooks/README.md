@@ -70,6 +70,6 @@ No model fitting is performed here. The goal is to build intuition before the mo
 
 - Introduces the mixture cure model: $S_{\text{mix}}(t \mid x) = \pi(x) \cdot S_u(t \mid x) + (1 - \pi(x))$, where the survival curve plateaus above zero for subjects who will never experience the event
 - Uses a synthetic e-commerce returns dataset with known true parameters for parameter recovery validation
-- Compares `lifelines.MixtureCureFitter` (scalar cure fraction, no covariates) against `bayes_survival.LogNormalCureModel` (logistic regression sub-model for per-subject cure probability)
+- Compares `lifelines.MixtureCureFitter` (scalar cure fraction, no covariates) against `bayes_survival.LogLogisticCureModel` (logistic regression sub-model for per-subject cure probability)
 - Shows how the Bayesian model learns covariate-specific cure fractions and survival asymptotes that the frequentist model cannot capture
 - Explains why `pm.Potential` is required instead of `pm.Censored` for the mixture likelihood
