@@ -5,6 +5,35 @@
 
 Bayesian survival analysis models built on [PyMC](https://www.pymc.io/), with comparisons against [lifelines](https://lifelines.readthedocs.io/) frequentist equivalents. Inspired by [pymc-survival](https://github.com/pymc-labs/pymc-survival).
 
+## Table of Contents
+
+- [Installation](#installation)
+  - [Core library](#core-library)
+  - [With notebook dependencies](#with-notebook-dependencies)
+  - [With dev dependencies](#with-dev-dependencies)
+  - [With all optional dependencies](#with-all-optional-dependencies)
+- [Models](#models)
+  - [Nonparametric](#nonparametric)
+    - [`KaplanMeierModel`](#kaplanmeiermodel)
+    - [`NelsonAalenModel`](#nelsonalenmodel)
+  - [Accelerated Failure Time (AFT)](#accelerated-failure-time-aft)
+    - [`WeibullAFTModel`](#weibullaftmodel)
+    - [`LogNormalAFTModel`](#lognormalaftmodel)
+    - [`LogLogisticAFTModel`](#loglogisticaftmodel)
+  - [Hierarchical Accelerated Failure Time (AFT)](#hierarchical-accelerated-failure-time-aft)
+    - [`HierarchicalWeibullAFTModel`](#hierarchicalweibullaftmodel)
+    - [`HierarchicalLogNormalAFTModel`](#hierarchicallognormalaftmodel)
+    - [`HierarchicalLogLogisticAFTModel`](#hierarchicalloglogisticaftmodel)
+  - [Cox Proportional Hazards](#cox-proportional-hazards)
+    - [`PiecewiseCoxPHModel`](#piecewisecoxphmodel)
+  - [Mixture Cure Models](#mixture-cure-models)
+    - [`LogNormalCureModel`](#lognormalcuremodel)
+    - [`WeibullCureModel`](#weibullcuremodel)
+    - [`LogLogisticCureModel`](#loglogisticcuremodel)
+- [Design](#design)
+- [Future Work](#future-work)
+  - [Additional Mixture Cure Models](#additional-mixture-cure-models)
+
 ## Installation
 
 This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
@@ -125,7 +154,7 @@ times, S_mean = na.posterior_mean_survival
 
 ### Accelerated Failure Time (AFT)
 
-Both models share the same interface and parameterisation: an intercept is added automatically, and positive `β_j` corresponds to longer expected survival times.
+All AFT models share the same interface: an intercept is added automatically, and positive `β_j` corresponds to longer expected survival times.
 
 #### `WeibullAFTModel`
 
@@ -162,8 +191,6 @@ The hazard is non-monotonic (rises then falls), making this model suitable when 
 | `beta` | Log-scale coefficients (+ intercept) | `Normal(μ=0, σ=5)` |
 | `alpha` | Shape — controls both tail heaviness and hazard peak location | `Gamma(α=5, β=2)` |
 
-## Usage
-
 ```python
 from bayes_survival.survival_models.aft import WeibullAFTModel, LogNormalAFTModel, LogLogisticAFTModel
 import numpy as np
@@ -179,7 +206,7 @@ model.fit(X_train, t_train, event_train, draws=1000, tune=1000, chains=4)
 # Override a prior
 model = WeibullAFTModel(priors={"alpha": (pm.HalfNormal, {"sigma": 1})})
 
-# Survival function: returns mean + 95% HDI over a time grid
+# Survival function: returns mean + 94% HDI over a time grid
 pred = model.predict_survival_function(X_test, times=np.linspace(0.1, 36, 200))
 pred.mean        # (n_obs, n_times)
 pred.hdi_lower   # (n_obs, n_times)
@@ -195,6 +222,96 @@ model.conditional_event_probability(X_test, t=6.0, T=24.0)
 samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
 ```
 
+### Hierarchical Accelerated Failure Time (AFT)
+
+Hierarchical variants of each AFT model. Covariates belonging to a
+`HierarchySpec` group are drawn from `Normal(mu_group, sigma_group)`, where
+the hyper-parameters are themselves given priors — enabling **partial pooling**
+across the group. Sparse groups borrow strength from data-rich groups instead
+of being estimated in isolation.
+
+`fit()` requires a `pd.DataFrame` so covariate names can be resolved.
+Prediction methods accept either a DataFrame or a plain NumPy array (columns in
+the same order as the training DataFrame).
+
+#### `HierarchicalWeibullAFTModel`
+
+Extends `WeibullAFTModel` with hierarchical priors on selected covariate groups.
+
+```
+S(t | x) = exp( -(t / exp(Xβ))^α )
+Grouped:   β_j ~ Normal(mu_group, sigma_group)
+```
+
+| Parameter | Role | Default prior |
+|-----------|------|---------------|
+| `beta` (intercept + ungrouped) | Flat prior | `Normal(μ=0, σ=5)` |
+| `mu_{group}` | Hyper-prior on group mean | `Normal(μ=0, σ=1)` |
+| `sigma_{group}` | Hyper-prior on group std | `HalfNormal(σ=1)` |
+| `alpha` | Weibull shape | `Gamma(α=5, β=2)` |
+
+#### `HierarchicalLogNormalAFTModel`
+
+Extends `LogNormalAFTModel` with hierarchical priors on selected covariate groups.
+
+```
+S(t | x) = Φ((Xβ - log(t)) / σ)
+Grouped:   β_j ~ Normal(mu_group, sigma_group)
+```
+
+| Parameter | Role | Default prior |
+|-----------|------|---------------|
+| `beta` (intercept + ungrouped) | Flat prior | `Normal(μ=0, σ=5)` |
+| `mu_{group}` | Hyper-prior on group mean | `Normal(μ=0, σ=1)` |
+| `sigma_{group}` | Hyper-prior on group std | `HalfNormal(σ=1)` |
+| `sigma` | Spread of log-event times | `Gamma(α=5, β=2)` |
+
+#### `HierarchicalLogLogisticAFTModel`
+
+Extends `LogLogisticAFTModel` with hierarchical priors on selected covariate groups.
+
+```
+S(t | x) = 1 / (1 + (t / exp(Xβ))^α)
+Grouped:   β_j ~ Normal(mu_group, sigma_group)
+```
+
+| Parameter | Role | Default prior |
+|-----------|------|---------------|
+| `beta` (intercept + ungrouped) | Flat prior | `Normal(μ=0, σ=5)` |
+| `mu_{group}` | Hyper-prior on group mean | `Normal(μ=0, σ=1)` |
+| `sigma_{group}` | Hyper-prior on group std | `HalfNormal(σ=1)` |
+| `alpha` | Shape — controls tail heaviness and hazard peak | `Gamma(α=5, β=2)` |
+
+```python
+from bayes_survival.survival_models.hierarchical_aft import (
+    HierarchicalWeibullAFTModel,
+    HierarchicalLogNormalAFTModel,
+    HierarchicalLogLogisticAFTModel,
+)
+from bayes_survival.survival_models.base import HierarchySpec
+import numpy as np
+
+# Define covariate groups that should share a hyper-prior
+hierarchies = [
+    HierarchySpec(name="product_type", covariate_names=["electronics", "clothing", "books"]),
+    HierarchySpec(name="day_of_week", covariate_names=["mon", "tue", "wed", "thu"]),
+]
+
+model = HierarchicalWeibullAFTModel(hierarchies=hierarchies)
+model.fit(df_train, t_train, event_train, draws=1000, tune=1000, chains=4)
+
+# Survival function: mean + 94% HDI
+pred = model.predict_survival_function(df_test, times=np.linspace(0.1, 36, 200))
+pred.mean        # (n_obs, n_times)
+pred.hdi_lower   # (n_obs, n_times)
+pred.hdi_upper   # (n_obs, n_times)
+
+# Survival probability at a single time
+model.survival_probability(df_test, t=12.0)
+
+# Posterior predictive event times
+samples = model.sample_predicted_event_times(df_test)  # (n_samples, n_obs)
+```
 
 ### Cox Proportional Hazards
 
@@ -247,13 +364,6 @@ model.conditional_event_probability(X_test, t=6.0, T=24.0)
 # Posterior predictive event times via piecewise-exponential inverse CDF
 samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
 ```
-
-## Design
-
-- `BaseSurvivalModel` — abstract base providing `fit`, `predict_survival_function`, `survival_probability`, `conditional_event_probability`, and `sample_predicted_event_times`
-- Subclasses declare a `default_priors` class attribute; users can override any prior at construction time
-- `build_model` uses `pm.Data` containers so `pm.set_data` can swap in new observations at predict time without rebuilding the graph
-- `sample_predicted_event_times` calls `pm.sample_posterior_predictive` with `upper=inf` to draw uncensored event times from the posterior predictive distribution
 
 ### Mixture Cure Models
 
@@ -393,13 +503,17 @@ cure.hdi_upper   # (n_obs,)
 samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
 ```
 
+## Design
+
+- `BaseSurvivalModel` — abstract base providing `fit`, `predict_survival_function`, `survival_probability`, `conditional_event_probability`, and `sample_predicted_event_times`
+- Subclasses declare a `default_priors` class attribute; users can override any prior at construction time
+- `build_model` uses `pm.Data` containers so `pm.set_data` can swap in new observations at predict time without rebuilding the graph
+- `sample_predicted_event_times` calls `pm.sample_posterior_predictive` with `upper=inf` to draw uncensored event times from the posterior predictive distribution
+
 ## Future Work
-
-### Hierarchical / Multi-Level Survival Models
-
-- Allow for groups of covariates to share a hyper-prior, enabling information sharing when some variables are sparsely present in the data.
 
 ### Additional Mixture Cure Models
 
 - Use [pymc-BART](https://www.pymc.io/projects/bart/en/latest/) as the classifier to allow for non-parametric modelling.
-- Shared cure mixture interface so different classifying and timing components can be mixed freely
+- Shared cure mixture interface so different classifying and timing components can be mixed freely.
+- Hierarchical cure models.
