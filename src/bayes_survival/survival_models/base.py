@@ -1,6 +1,6 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar
 
 import numpy as np
@@ -9,6 +9,41 @@ import arviz as az
 
 
 PriorSpec = dict[str, tuple[type, dict]]
+
+
+@dataclass
+class HierarchySpec:
+    """Specification for a group of covariates that share a hyper-prior.
+
+    Covariates in the group are drawn from Normal(mu_group, sigma_group), where
+    mu_group and sigma_group are themselves given priors (hyper-priors), enabling
+    partial pooling across the group.
+
+    Parameters
+    ----------
+    name:
+        Identifier used as a prefix for PyMC variable names
+        (``mu_{name}``, ``sigma_{name}``, ``beta_{name}``).
+    covariate_names:
+        Column names (matching the DataFrame passed to ``fit``) of the
+        covariates that belong to this group.
+    mu_prior:
+        ``(DistributionClass, kwargs)`` tuple for the hyper-prior on the group mean.
+        Defaults to ``Normal(mu=0, sigma=1)``.
+    sigma_prior:
+        ``(DistributionClass, kwargs)`` tuple for the hyper-prior on the group
+        standard deviation.  Defaults to ``HalfNormal(sigma=1)``.
+    """
+
+    name: str
+    covariate_names: list[str]
+    mu_prior: tuple[type, dict] = field(
+        default_factory=lambda: (pm.Normal, {"mu": 0, "sigma": 1})
+    )
+    sigma_prior: tuple[type, dict] = field(
+        default_factory=lambda: (pm.HalfNormal, {"sigma": 1})
+    )
+    centered: bool = True
 
 
 @dataclass
@@ -95,7 +130,7 @@ class BaseSurvivalModel(ABC):
     ) -> BaseSurvivalModel:
         self.model = self.build_model(X, t, event)
         with self.model:
-            self.idata = pm.sample(draws=draws, tune=tune, **sample_kwargs)
+            self.idata = pm.sample(draws=draws, tune=tune, nuts_sampler=nuts_sampler, **sample_kwargs)
         return self
 
     @abstractmethod
