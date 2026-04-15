@@ -14,3 +14,13 @@ PyTensor equivalent of np.where. Required when different observations contribute
  - Conjugate is when the selection of the prior distribution and the likelihood results in a closed form posterior. This means no MCMC sampling is required and model fitting is fast.
  - Beta-Binomial conjugacy (Bayesian KM) $\rightarrow$ Hazard at each event time is a probability ∈ [0,1], so Beta is the natural prior. Posterior closes analytically: $Beta(α + d_j, β + n_j - d_j)$. No MCMC needed when hyperparameters are fixed.
  - Prior pseudo-observation interpretation $\rightarrow$ In Beta(α,β): α = pseudo-deaths, β = pseudo-survivals. Total weight α+β controls prior strength independently of prior mean α/(α+β). Beta(1,1) looks uninformative but injects 2 pseudo-observations per time point ( strong for small sample numbers).
+
+### Centering Trick for Hyper-Priors
+
+The "centering trick" in this context is the non-centered parameterization; a reparameterization that fixes the funnel geometry NUTS struggles with when sigma_h for a hierarchy is small. Basically, if group variance is narrow, the sampler can get stuck making all individuals in a group the same, by adding a scaler to the variance we can help the sampler bypass this problem.
+```python
+beta_raw ~ Normal(0, 1)  — no coupling to hyper-params
+# beta_h   = mu_h + sigma_h * beta_raw  — deterministic
+beta_raw = pm.Normal(f"beta_{grp.name}_raw", mu=0, sigma=1, shape=n_g)
+beta_h = pm.Deterministic(f"beta_{grp.name}", mu_h + sigma_h * beta_raw)
+```
