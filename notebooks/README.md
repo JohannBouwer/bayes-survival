@@ -64,7 +64,19 @@ No model fitting is performed here. The goal is to build intuition before the mo
 
 ---
 
-## 6. [Cure_Introduction.ipynb](Cure_Introduction.ipynb)
+## 6. [Hierarchical_AFT_Introduction.ipynb](Hierarchical_AFT_Introduction.ipynb)
+
+**Hierarchical Weibull AFT — partial pooling over covariate groups.**
+
+- Motivates hierarchical priors: when covariates form natural groups (e.g. product categories, day-of-week dummies), sharing a hyper-prior lets sparse groups borrow strength from data-rich ones
+- Fits a flat `WeibullAFTModel` as a baseline, then fits `HierarchicalWeibullAFTModel` with two independent hierarchies (`product_type` and `day_of_week`) on a synthetic e-commerce returns dataset
+- Inspects hyper-prior posteriors: `mu_group` captures the average group signal; `sigma_group` quantifies how much members within the group vary
+- Demonstrates partial pooling: the sports category (n≈50) has its HDI width shrunk by borrowing from the other product types
+- Compares flat vs hierarchical survival predictions for four representative customer profiles, showing tighter uncertainty for sparse groups under the hierarchical model
+
+---
+
+## 7. [Cure_Introduction.ipynb](Cure_Introduction.ipynb)
 
 **Mixture cure model — covariate-dependent cure fractions.**
 
