@@ -516,4 +516,3 @@ samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
 
 - Use [pymc-BART](https://www.pymc.io/projects/bart/en/latest/) as the classifier to allow for non-parametric modelling.
 - Shared cure mixture interface so different classifying and timing components can be mixed freely.
-- Hierarchical cure models.
