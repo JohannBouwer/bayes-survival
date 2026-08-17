@@ -3,6 +3,7 @@ from typing import ClassVar
 
 import numpy as np
 import pymc as pm
+import xarray as xr
 
 from .base import BaseSurvivalModel, PriorSpec
 
@@ -54,6 +55,10 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
         self._cuts: np.ndarray | None = (
             None  # computed at fit time, used for prediction
         )
+        # Long-format bookkeeping, set at fit time; used to fold the row-wise
+        # Poisson log-likelihood back to one value per subject.
+        self._subject_idx: np.ndarray | None = None
+        self._n_obs: int | None = None
         super().__init__(priors=priors)
 
     @staticmethod
@@ -76,7 +81,7 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
         t: np.ndarray,
         event: np.ndarray,
         cuts: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Expand (X, t, event) to long format for the Poisson likelihood.
 
         For each observation i and each interval k in which i is at risk,
@@ -84,6 +89,11 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
           - exposure : time spent in interval k
           - event_ik : 1 iff observation i had an event in interval k, else 0
           - interval_idx : k (for indexing into log_baseline)
+          - subject_idx : i (for folding the row-wise log-likelihood back to
+            per-subject, so LOO/WAIC are comparable with the other model families)
+
+        Rows are emitted in subject order, which ``_attach_log_likelihood``
+        relies on when aggregating.
 
         Parameters
         ----------
@@ -98,6 +108,7 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
         interval_idx : (N_long,) int
         exposure     : (N_long,) float — time at risk in interval
         events_long  : (N_long,) int   — 0/1 event indicator per row
+        subject_idx  : (N_long,) int   — originating observation index
         """
         boundaries = np.concatenate([[0.0], cuts, [np.inf]])
         n_intervals = len(boundaries) - 1
@@ -106,6 +117,7 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
         idx_rows: list[int] = []
         exp_rows: list[float] = []
         ev_rows: list[int] = []
+        subj_rows: list[int] = []
 
         for i in range(len(t)):
             for k in range(n_intervals):
@@ -119,12 +131,14 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
                 idx_rows.append(k)
                 exp_rows.append(exposure)
                 ev_rows.append(ev)
+                subj_rows.append(i)
 
         return (
             np.array(X_rows, dtype=float),
             np.array(idx_rows, dtype=int),
             np.array(exp_rows, dtype=float),
             np.array(ev_rows, dtype=int),
+            np.array(subj_rows, dtype=int),
         )
 
     def build_model(
@@ -146,10 +160,13 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
         n_intervals = len(cuts) + 1
 
         # Expand to long format
-        X_long, interval_idx, exposure, events_long = self._expand_data(
+        X_long, interval_idx, exposure, events_long, subject_idx = self._expand_data(
             X, t, event, cuts
         )
         log_exposure = np.log(exposure)
+
+        self._n_obs = X.shape[0]
+        self._subject_idx = subject_idx
 
         with pm.Model() as model:
             grw_sigma = self._prior("grw_sigma")
@@ -166,14 +183,48 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
 
         return model
 
+    def _attach_log_likelihood(self) -> None:
+        """Attach a *per-subject* log_likelihood group.
+
+        The Poisson likelihood lives on the expanded long-format rows, so
+        ``pm.compute_log_likelihood`` returns one value per subject-interval.
+        Left that way, ``az.compare`` against an AFT model would be meaningless:
+        the two would be scored over different numbers of observations. Since a
+        subject's intervals are conditionally independent given the parameters,
+        summing their contributions recovers that subject's log-likelihood.
+        """
+        super()._attach_log_likelihood()
+
+        assert self.idata is not None
+        assert self._subject_idx is not None and self._n_obs is not None
+
+        group = self.idata.log_likelihood
+        ll = group["obs"].values  # (chain, draw, N_long)
+        if ll.shape[2] == self._n_obs:
+            return  # nothing to fold — exactly one interval per subject
+
+        # Validation guarantees t > 0, so every subject contributes at least one
+        # row and occupies a single contiguous block; reduceat over the block
+        # start offsets sums each block.
+        starts = np.searchsorted(self._subject_idx, np.arange(self._n_obs))
+        per_subject = np.add.reduceat(ll, starts, axis=2)  # (chain, draw, n_obs)
+
+        self.idata.log_likelihood = xr.Dataset(
+            {"obs": (("chain", "draw", "obs_dim_0"), per_subject)},
+            coords={
+                "chain": group.coords["chain"],
+                "draw": group.coords["draw"],
+                "obs_dim_0": np.arange(self._n_obs),
+            },
+        )
+
     def _predict_survival_samples(
         self,
         X: np.ndarray,
         times: np.ndarray,
     ) -> np.ndarray:
         """Return survival samples of shape (n_samples, n_obs, n_times)."""
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
+        X = self._check_n_features(X)
         if self._cuts is None:
             raise RuntimeError("Model has not been fitted yet — call fit() first.")
 
@@ -213,6 +264,7 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
         self,
         X: np.ndarray,
         return_idata: bool = False,
+        random_seed: int | None = None,
         **sample_kwargs,
     ) -> np.ndarray:
         """Draw posterior-predictive event times via piecewise-exponential inverse CDF.
@@ -221,6 +273,7 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
         ----------
         X : (n_obs, n_features) — raw covariates, no intercept column.
         return_idata : ignored (kept for interface compatibility).
+        random_seed : seed for the predictive draws; pass an int for reproducibility.
 
         Returns
         -------
@@ -229,8 +282,7 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
         self._check_fitted()
         if self._cuts is None:
             raise RuntimeError("Model has not been fitted yet — call fit() first.")
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
+        X = self._check_n_features(X)
 
         assert self.idata is not None
         posterior = self.idata.posterior
@@ -251,7 +303,7 @@ class PiecewiseCoxPHModel(BaseSurvivalModel):
         widths = np.diff(boundaries)  # (K,) — last entry is inf
 
         # Target cumulative hazard drawn from Exp(1) ≡ -log(Uniform(0,1))
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(random_seed)
         u = rng.uniform(0.0, 1.0, (n_samples, X.shape[0]))
         target = -np.log(u)  # (S, n_obs)
 

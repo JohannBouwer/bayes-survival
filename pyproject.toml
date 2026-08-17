@@ -1,34 +1,41 @@
 [project]
 name = "bayes-survival"
 version = "0.1.0"
-description = "Add your description here"
+description = "Bayesian survival analysis models built on PyMC"
 readme = "README.md"
 authors = [{ name = "Johann", email = "bouwer2608@gmail.com" }]
 requires-python = ">=3.12"
+# Only what the library itself imports, plus nutpie because fit() defaults to
+# nuts_sampler="nutpie". The [pymc] extra is what supplies numba for that
+# backend — a bare "nutpie" pin does not.
 dependencies = [
     "pymc>=5.0",
     "pytensor>=2.18",
     "numpy>=1.26",
     "pandas>=2.0",
     "scipy>=1.11",
-    "lifelines>=0.29",
     "arviz>=0.20,<1.0",
-    "matplotlib>=3.8",
-    "jax[cpu]>=0.4",
-    "jaxlib>=0.4",
-    "numpyro>=0.15",
-    "nutpie>=0.14",
-    "statsmodels>=0.14.6",
-    "scikit-learn>=1.8.0",
-    "numba>=0.65.0",
+    "nutpie[pymc]>=0.14",
 ]
 
 [project.optional-dependencies]
+# Alternative NUTS backends, selectable via fit(nuts_sampler=...).
+samplers = [
+    "jax[cpu]>=0.4",
+    "jaxlib>=0.4",
+    "numpyro>=0.15",
+]
+# Everything the notebooks need on top of the core library, including the
+# frequentist packages used for side-by-side comparison.
 notebook = [
     "jupyterlab>=4.0",
     "ipykernel>=6.0",
     "ipywidgets>=8.0",
     "watermark>=2.4",
+    "lifelines>=0.29",
+    "matplotlib>=3.8",
+    "statsmodels>=0.14.6",
+    "scikit-learn>=1.8.0",
 ]
 dev = ["pytest>=8.0", "ruff>=0.4"]
 

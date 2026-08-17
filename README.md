@@ -10,6 +10,7 @@ Bayesian survival analysis models built on [PyMC](https://www.pymc.io/), with co
 - [Installation](#installation)
   - [Core library](#core-library)
   - [With notebook dependencies](#with-notebook-dependencies)
+  - [With alternative samplers](#with-alternative-samplers)
   - [With dev dependencies](#with-dev-dependencies)
   - [With all optional dependencies](#with-all-optional-dependencies)
 - [Models](#models)
@@ -40,6 +41,9 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
 
 ### Core library
 
+Installs only what the library imports (PyMC, PyTensor, NumPy, pandas, SciPy, ArviZ) plus
+`nutpie[pymc]`, the default NUTS sampler:
+
 ```bash
 git clone https://github.com/Johann-FullHD/bayes-survival.git
 cd bayes-survival
@@ -48,10 +52,20 @@ uv sync
 
 ### With notebook dependencies
 
-Installs JupyterLab, ipykernel, ipywidgets, and watermark alongside the core library:
+Installs JupyterLab, ipykernel, ipywidgets, and watermark, plus the packages the notebooks use for
+frequentist comparison (lifelines, matplotlib, statsmodels, scikit-learn):
 
 ```bash
 uv sync --extra notebook
+```
+
+### With alternative samplers
+
+Installs JAX and NumPyro, so `fit(nuts_sampler="numpyro")` becomes available alongside the default
+`"nutpie"`:
+
+```bash
+uv sync --extra samplers
 ```
 
 ### With dev dependencies
@@ -509,6 +523,26 @@ samples = model.sample_predicted_event_times(X_test)  # (n_samples, n_obs)
 - Subclasses declare a `default_priors` class attribute; users can override any prior at construction time
 - `build_model` uses `pm.Data` containers so `pm.set_data` can swap in new observations at predict time without rebuilding the graph
 - `sample_predicted_event_times` calls `pm.sample_posterior_predictive` with `upper=inf` to draw uncensored event times from the posterior predictive distribution
+- Every `fit()` validates its inputs up front — `t` must be strictly positive (the nonparametric estimators allow `t = 0`), `event` must be binary, and shapes must agree
+- Every method that draws random samples accepts `random_seed` for reproducible output
+
+### Model comparison
+
+`fit()` attaches a pointwise `log_likelihood` group by default, so ArviZ's comparison tools work
+directly. The Cox model's likelihood is summed from its internal long-format rows back to one value
+per subject, so its scores are on the same scale as the AFT and cure models:
+
+```python
+import arviz as az
+
+weibull = WeibullAFTModel().fit(X, t, event)
+cox = PiecewiseCoxPHModel(n_intervals=10).fit(X, t, event)
+
+az.loo(weibull.idata)
+az.compare({"weibull_aft": weibull.idata, "piecewise_cox": cox.idata})
+```
+
+Pass `fit(..., log_likelihood=False)` to skip the extra computation.
 
 ## Future Work
 

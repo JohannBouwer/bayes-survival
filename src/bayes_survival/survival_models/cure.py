@@ -20,8 +20,31 @@ class CurePrediction:
     hdi_upper: np.ndarray  # (n_obs,)
 
 
+def _lift_obs_loglik(idata: az.InferenceData) -> None:
+    """Move the ``obs_loglik`` Deterministic into a ``log_likelihood`` group.
+
+    The mixture cure likelihood is expressed with ``pm.Potential``, which is not
+    an observed RV — ``pm.compute_log_likelihood`` therefore produces nothing at
+    all for these models (silently: no group, no error). ``build_model`` instead
+    records the pointwise log-likelihood as a Deterministic, and this promotes it
+    to the group ``az.loo`` / ``az.compare`` expect.
+
+    Dropping it from ``posterior`` also keeps it out of ``az.summary`` and trace
+    plots, where an (n_obs,) variable would otherwise render hundreds of rows.
+    """
+    if idata is None or "obs_loglik" not in idata.posterior:
+        return
+
+    da = idata.posterior["obs_loglik"]
+    extra_dims = [d for d in da.dims if d not in ("chain", "draw")]
+    renamed = da.rename({d: f"obs_dim_{i}" for i, d in enumerate(extra_dims)})
+
+    idata.add_groups({"log_likelihood": renamed.to_dataset(name="obs")})
+    idata.posterior = idata.posterior.drop_vars("obs_loglik")
+
+
 class LogNormalCureModel(BaseSurvivalModel):
-    """Mixture cure survival model with log-normal timing distribution.
+    r"""Mixture cure survival model with log-normal timing distribution.
 
     Mixture survival function:
         S_mix(t | x) = π(x) · S_u(t | x) + (1 - π(x))
@@ -82,22 +105,30 @@ class LogNormalCureModel(BaseSurvivalModel):
             log_lik_event = pt.log(pi) + log_f
             log_lik_censored = pt.log(pi * pt.exp(log_S) + (1.0 - pi))
 
-            pm.Potential(
-                "obs",
-                pt.switch(pt.eq(event_data, 1.0), log_lik_event, log_lik_censored),
-            )
+            # Bind the pointwise log-likelihood once, then register it as two
+            # *independent* nodes: a Deterministic (so it can be lifted into a
+            # log_likelihood group for az.loo/az.compare) and the Potential that
+            # actually contributes to the model logp.
+            #
+            # Do not write pm.Potential("obs", <the Deterministic variable>) —
+            # wrapping the Deterministic makes the nutpie backend, which is this
+            # library's default sampler, fail with KeyError: 'obs'.
+            loglik = pt.switch(pt.eq(event_data, 1.0), log_lik_event, log_lik_censored)
+            pm.Deterministic("obs_loglik", loglik)
+            pm.Potential("obs", loglik)
 
         return model
+
+    def _attach_log_likelihood(self) -> None:
+        _lift_obs_loglik(self.idata)
 
     def _predict_survival_samples(
         self,
         X: np.ndarray,
         times: np.ndarray,
     ) -> np.ndarray:
-        X = np.atleast_2d(X)
+        X = self._check_n_features(X)
         times = np.asarray(times, dtype=float)
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
 
         assert self.idata is not None
         posterior = self.idata.posterior
@@ -154,9 +185,7 @@ class LogNormalCureModel(BaseSurvivalModel):
         CurePrediction with arrays of shape (n_obs,).
         """
         self._check_fitted()
-        X = np.atleast_2d(X)
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
+        X = self._check_n_features(X)
 
         assert self.idata is not None
         posterior = self.idata.posterior
@@ -183,6 +212,7 @@ class LogNormalCureModel(BaseSurvivalModel):
         self,
         X: np.ndarray,
         return_idata: bool = False,
+        random_seed: int | None = None,
         **kwargs,
     ) -> np.ndarray:
         """Draw posterior-predictive event times from the mixture cure model.
@@ -194,6 +224,7 @@ class LogNormalCureModel(BaseSurvivalModel):
         ----------
         X : (n_obs, n_features) — raw covariates, no intercept column.
         return_idata : must be False; InferenceData is not available for numpy samples.
+        random_seed : seed for the predictive draws; pass an int for reproducibility.
 
         Returns
         -------
@@ -204,10 +235,9 @@ class LogNormalCureModel(BaseSurvivalModel):
                 "return_idata=True is not supported for LogNormalCureModel — "
                 "samples are drawn in numpy and have no InferenceData wrapper."
             )
+        rng = np.random.default_rng(random_seed)
         self._check_fitted()
-        X = np.atleast_2d(X)
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
+        X = self._check_n_features(X)
 
         assert self.idata is not None
         posterior = self.idata.posterior
@@ -232,9 +262,9 @@ class LogNormalCureModel(BaseSurvivalModel):
         )  # (n_samples, n_obs)
         mu = gamma_flat[:, np.newaxis] + delta_flat @ X.T  # (n_samples, n_obs)
 
-        susceptible = np.random.binomial(1, pi).astype(bool)  # (n_samples, n_obs)
-        t_latent = np.random.lognormal(
-            mu, sigma_flat[:, np.newaxis]
+        susceptible = rng.binomial(1, pi).astype(bool)  # (n_samples, n_obs)
+        t_latent = rng.lognormal(
+            mu, sigma_flat[:, np.newaxis], size=mu.shape
         )  # (n_samples, n_obs)
 
         return np.where(susceptible, t_latent, np.inf)
@@ -303,22 +333,30 @@ class WeibullCureModel(BaseSurvivalModel):
             log_lik_event = pt.log(pi) + log_f
             log_lik_censored = pt.log(pi * pt.exp(log_S) + (1.0 - pi))
 
-            pm.Potential(
-                "obs",
-                pt.switch(pt.eq(event_data, 1.0), log_lik_event, log_lik_censored),
-            )
+            # Bind the pointwise log-likelihood once, then register it as two
+            # *independent* nodes: a Deterministic (so it can be lifted into a
+            # log_likelihood group for az.loo/az.compare) and the Potential that
+            # actually contributes to the model logp.
+            #
+            # Do not write pm.Potential("obs", <the Deterministic variable>) —
+            # wrapping the Deterministic makes the nutpie backend, which is this
+            # library's default sampler, fail with KeyError: 'obs'.
+            loglik = pt.switch(pt.eq(event_data, 1.0), log_lik_event, log_lik_censored)
+            pm.Deterministic("obs_loglik", loglik)
+            pm.Potential("obs", loglik)
 
         return model
+
+    def _attach_log_likelihood(self) -> None:
+        _lift_obs_loglik(self.idata)
 
     def _predict_survival_samples(
         self,
         X: np.ndarray,
         times: np.ndarray,
     ) -> np.ndarray:
-        X = np.atleast_2d(X)
+        X = self._check_n_features(X)
         times = np.asarray(times, dtype=float)
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
 
         assert self.idata is not None
         posterior = self.idata.posterior
@@ -372,9 +410,7 @@ class WeibullCureModel(BaseSurvivalModel):
         CurePrediction with arrays of shape (n_obs,).
         """
         self._check_fitted()
-        X = np.atleast_2d(X)
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
+        X = self._check_n_features(X)
 
         assert self.idata is not None
         posterior = self.idata.posterior
@@ -401,6 +437,7 @@ class WeibullCureModel(BaseSurvivalModel):
         self,
         X: np.ndarray,
         return_idata: bool = False,
+        random_seed: int | None = None,
         **kwargs,
     ) -> np.ndarray:
         """Draw posterior-predictive event times from the mixture cure model.
@@ -412,6 +449,7 @@ class WeibullCureModel(BaseSurvivalModel):
         ----------
         X : (n_obs, n_features) — raw covariates, no intercept column.
         return_idata : must be False; InferenceData is not available for numpy samples.
+        random_seed : seed for the predictive draws; pass an int for reproducibility.
 
         Returns
         -------
@@ -422,10 +460,9 @@ class WeibullCureModel(BaseSurvivalModel):
                 "return_idata=True is not supported for WeibullCureModel — "
                 "samples are drawn in numpy and have no InferenceData wrapper."
             )
+        rng = np.random.default_rng(random_seed)
         self._check_fitted()
-        X = np.atleast_2d(X)
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
+        X = self._check_n_features(X)
 
         assert self.idata is not None
         posterior = self.idata.posterior
@@ -452,10 +489,14 @@ class WeibullCureModel(BaseSurvivalModel):
             gamma_flat[:, np.newaxis] + delta_flat @ X.T
         )  # (n_samples, n_obs)
 
-        susceptible = np.random.binomial(1, pi).astype(bool)  # (n_samples, n_obs)
-        # np.random.weibull draws from Weibull(shape, scale=1); multiply by lam for scale λ
-        t_latent = lam * np.random.weibull(
-            shape_flat[:, np.newaxis]
+        susceptible = rng.binomial(1, pi).astype(bool)  # (n_samples, n_obs)
+        # rng.weibull draws from Weibull(shape, scale=1); multiply by lam for scale λ.
+        # size=lam.shape is load-bearing: shape_flat[:, None] alone is (n_samples, 1),
+        # so every observation would share one standard-Weibull draw per posterior
+        # sample — marginals stay correct but the draws become perfectly rank-correlated
+        # across individuals, corrupting any joint quantity.
+        t_latent = lam * rng.weibull(
+            shape_flat[:, np.newaxis], size=lam.shape
         )  # (n_samples, n_obs)
 
         return np.where(susceptible, t_latent, np.inf)
@@ -530,22 +571,30 @@ class LogLogisticCureModel(BaseSurvivalModel):
             log_lik_event = pt.log(pi) + log_f
             log_lik_censored = pt.log(pi * pt.exp(log_S) + (1.0 - pi))
 
-            pm.Potential(
-                "obs",
-                pt.switch(pt.eq(event_data, 1.0), log_lik_event, log_lik_censored),
-            )
+            # Bind the pointwise log-likelihood once, then register it as two
+            # *independent* nodes: a Deterministic (so it can be lifted into a
+            # log_likelihood group for az.loo/az.compare) and the Potential that
+            # actually contributes to the model logp.
+            #
+            # Do not write pm.Potential("obs", <the Deterministic variable>) —
+            # wrapping the Deterministic makes the nutpie backend, which is this
+            # library's default sampler, fail with KeyError: 'obs'.
+            loglik = pt.switch(pt.eq(event_data, 1.0), log_lik_event, log_lik_censored)
+            pm.Deterministic("obs_loglik", loglik)
+            pm.Potential("obs", loglik)
 
         return model
+
+    def _attach_log_likelihood(self) -> None:
+        _lift_obs_loglik(self.idata)
 
     def _predict_survival_samples(
         self,
         X: np.ndarray,
         times: np.ndarray,
     ) -> np.ndarray:
-        X = np.atleast_2d(X)
+        X = self._check_n_features(X)
         times = np.asarray(times, dtype=float)
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
 
         assert self.idata is not None
         posterior = self.idata.posterior
@@ -597,9 +646,7 @@ class LogLogisticCureModel(BaseSurvivalModel):
         CurePrediction with arrays of shape (n_obs,).
         """
         self._check_fitted()
-        X = np.atleast_2d(X)
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
+        X = self._check_n_features(X)
 
         assert self.idata is not None
         posterior = self.idata.posterior
@@ -626,6 +673,7 @@ class LogLogisticCureModel(BaseSurvivalModel):
         self,
         X: np.ndarray,
         return_idata: bool = False,
+        random_seed: int | None = None,
         **kwargs,
     ) -> np.ndarray:
         """Draw posterior-predictive event times from the mixture cure model.
@@ -637,6 +685,7 @@ class LogLogisticCureModel(BaseSurvivalModel):
         ----------
         X : (n_obs, n_features) — raw covariates, no intercept column.
         return_idata : must be False; InferenceData is not available for numpy samples.
+        random_seed : seed for the predictive draws; pass an int for reproducibility.
 
         Returns
         -------
@@ -647,10 +696,9 @@ class LogLogisticCureModel(BaseSurvivalModel):
                 "return_idata=True is not supported for LogLogisticCureModel — "
                 "samples are drawn in numpy and have no InferenceData wrapper."
             )
+        rng = np.random.default_rng(random_seed)
         self._check_fitted()
-        X = np.atleast_2d(X)
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
+        X = self._check_n_features(X)
 
         assert self.idata is not None
         posterior = self.idata.posterior
@@ -677,9 +725,9 @@ class LogLogisticCureModel(BaseSurvivalModel):
             gamma_flat[:, np.newaxis] + delta_flat @ X.T
         )  # (n_samples, n_obs)
 
-        susceptible = np.random.binomial(1, pi).astype(bool)  # (n_samples, n_obs)
+        susceptible = rng.binomial(1, pi).astype(bool)  # (n_samples, n_obs)
         # Log-logistic quantile: T = λ · (U / (1-U))^(1/shape) for U ~ Uniform(0,1)
-        U = np.random.uniform(size=pi.shape)
+        U = rng.uniform(size=pi.shape)
         t_latent = lam * (U / (1.0 - U)) ** (1.0 / shape_flat[:, np.newaxis])
 
         return np.where(susceptible, t_latent, np.inf)

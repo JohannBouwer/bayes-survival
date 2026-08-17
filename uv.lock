@@ -219,20 +219,12 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "arviz" },
-    { name = "jax" },
-    { name = "jaxlib" },
-    { name = "lifelines" },
-    { name = "matplotlib" },
-    { name = "numba" },
     { name = "numpy" },
-    { name = "numpyro" },
-    { name = "nutpie" },
+    { name = "nutpie", extra = ["pymc"] },
     { name = "pandas" },
     { name = "pymc" },
     { name = "pytensor" },
-    { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "statsmodels" },
 ]
 
 [package.optional-dependencies]
@@ -244,7 +236,16 @@ notebook = [
     { name = "ipykernel" },
     { name = "ipywidgets" },
     { name = "jupyterlab" },
+    { name = "lifelines" },
+    { name = "matplotlib" },
+    { name = "scikit-learn" },
+    { name = "statsmodels" },
     { name = "watermark" },
+]
+samplers = [
+    { name = "jax" },
+    { name = "jaxlib" },
+    { name = "numpyro" },
 ]
 
 [package.metadata]
@@ -252,26 +253,25 @@ requires-dist = [
     { name = "arviz", specifier = ">=0.20,<1.0" },
     { name = "ipykernel", marker = "extra == 'notebook'", specifier = ">=6.0" },
     { name = "ipywidgets", marker = "extra == 'notebook'", specifier = ">=8.0" },
-    { name = "jax", extras = ["cpu"], specifier = ">=0.4" },
-    { name = "jaxlib", specifier = ">=0.4" },
+    { name = "jax", extras = ["cpu"], marker = "extra == 'samplers'", specifier = ">=0.4" },
+    { name = "jaxlib", marker = "extra == 'samplers'", specifier = ">=0.4" },
     { name = "jupyterlab", marker = "extra == 'notebook'", specifier = ">=4.0" },
-    { name = "lifelines", specifier = ">=0.29" },
-    { name = "matplotlib", specifier = ">=3.8" },
-    { name = "numba", specifier = ">=0.65.0" },
+    { name = "lifelines", marker = "extra == 'notebook'", specifier = ">=0.29" },
+    { name = "matplotlib", marker = "extra == 'notebook'", specifier = ">=3.8" },
     { name = "numpy", specifier = ">=1.26" },
-    { name = "numpyro", specifier = ">=0.15" },
-    { name = "nutpie", specifier = ">=0.14" },
+    { name = "numpyro", marker = "extra == 'samplers'", specifier = ">=0.15" },
+    { name = "nutpie", extras = ["pymc"], specifier = ">=0.14" },
     { name = "pandas", specifier = ">=2.0" },
     { name = "pymc", specifier = ">=5.0" },
     { name = "pytensor", specifier = ">=2.18" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
-    { name = "scikit-learn", specifier = ">=1.8.0" },
+    { name = "scikit-learn", marker = "extra == 'notebook'", specifier = ">=1.8.0" },
     { name = "scipy", specifier = ">=1.11" },
-    { name = "statsmodels", specifier = ">=0.14.6" },
+    { name = "statsmodels", marker = "extra == 'notebook'", specifier = ">=0.14.6" },
     { name = "watermark", marker = "extra == 'notebook'", specifier = ">=2.4" },
 ]
-provides-extras = ["notebook", "dev"]
+provides-extras = ["samplers", "notebook", "dev"]
 
 [[package]]
 name = "beautifulsoup4"
@@ -1896,6 +1896,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/86/60/926ff0808ff14ff79a18e0f4796723718204a81eec2207ff6b8d7624cced/nutpie-0.16.6-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:b31e951bfc2745b4136dd8f957d9a8782cab9a96c09cb95e0716d47ad9b8b13a", size = 8010221 },
     { url = "https://files.pythonhosted.org/packages/53/36/367d73fb916ed39f008dc97cf329be1d0482aa448a5b8467b284d1bc690e/nutpie-0.16.6-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ad09821accf7eb76459edaf5720c44e821f6bd86e04397b7c2aa69b76432f702", size = 8673306 },
     { url = "https://files.pythonhosted.org/packages/1e/a0/e5ce0ff560a7c7ba077da341933eb4026017b7b6cf4c4aa7cc10321dff60/nutpie-0.16.6-cp314-cp314-win_amd64.whl", hash = "sha256:ab4708a9c96f138bf45b599824f5a2e07f3bd1589c5529e942371e2145941c89", size = 9111757 },
+]
+
+[package.optional-dependencies]
+pymc = [
+    { name = "numba" },
+    { name = "pymc" },
 ]
 
 [[package]]
