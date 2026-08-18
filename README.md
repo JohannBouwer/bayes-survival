@@ -394,6 +394,13 @@ where:
 - `S_u(t | x)` — survival function for the susceptible subgroup
 - `1 - π(x)` — cure fraction; survival asymptotes here instead of reaching zero
 
+> [!NOTE]
+> The cure models centre covariates internally before sampling, which is what makes them sample
+> reliably. The intercepts are reported back-transformed to their original meaning (the value at
+> `X = 0`), so coefficients are interpreted exactly as before. Only the *priors* on `alpha` and
+> `gamma` change meaning: they now describe the intercept at mean covariates — the
+> better-conditioned and more weakly-informative choice.
+
 #### `LogNormalCureModel`
 
 Log-normal timing distribution for the susceptible subgroup:
@@ -404,9 +411,9 @@ S_u(t | x) = Φ(-z),   z = (log(t) - (γ + X·δ)) / σ
 
 | Parameter | Role | Default prior |
 |-----------|------|---------------|
-| `alpha` | Intercept for susceptibility logit | `Normal(μ=0, σ=1)` |
+| `alpha` | Intercept for susceptibility logit (at mean covariates) | `Normal(μ=0, σ=1)` |
 | `beta_cure` | Covariate effects on susceptibility logit | `Normal(μ=0, σ=3)` |
-| `gamma` | Intercept for log-normal log-mean | `Normal(μ=0, σ=1)` |
+| `gamma` | Intercept for log-normal log-mean (at mean covariates) | `Normal(μ=0, σ=1)` |
 | `delta` | Covariate effects on log-mean | `Normal(μ=0, σ=2)` |
 | `sigma` | Spread of log-event times (susceptibles) | `HalfNormal(σ=1)` |
 
@@ -443,9 +450,9 @@ S_u(t | x) = exp(-(t / λ(x))^shape),   λ(x) = exp(γ + X·δ)
 
 | Parameter | Role | Default prior |
 |-----------|------|---------------|
-| `alpha` | Intercept for susceptibility logit | `Normal(μ=0, σ=1)` |
+| `alpha` | Intercept for susceptibility logit (at mean covariates) | `Normal(μ=0, σ=1)` |
 | `beta_cure` | Covariate effects on susceptibility logit | `Normal(μ=0, σ=3)` |
-| `gamma` | Intercept for Weibull log-scale | `Normal(μ=0, σ=1)` |
+| `gamma` | Intercept for Weibull log-scale (at mean covariates) | `Normal(μ=0, σ=1)` |
 | `delta` | Covariate effects on Weibull log-scale | `Normal(μ=0, σ=2)` |
 | `shape` | Weibull shape (shape > 1: increasing hazard) | `Gamma(α=5, β=2)` |
 
@@ -486,9 +493,9 @@ The log-logistic hazard is non-monotonic (rises then falls), making this model a
 
 | Parameter | Role | Default prior |
 |-----------|------|---------------|
-| `alpha` | Intercept for susceptibility logit | `Normal(μ=0, σ=1)` |
+| `alpha` | Intercept for susceptibility logit (at mean covariates) | `Normal(μ=0, σ=1)` |
 | `beta_cure` | Covariate effects on susceptibility logit | `Normal(μ=0, σ=3)` |
-| `gamma` | Intercept for log-logistic log-scale | `Normal(μ=0, σ=1)` |
+| `gamma` | Intercept for log-logistic log-scale (at mean covariates) | `Normal(μ=0, σ=1)` |
 | `delta` | Covariate effects on log-scale | `Normal(μ=0, σ=2)` |
 | `shape` | Log-logistic shape (controls tail heaviness and hazard peak) | `Gamma(α=5, β=2)` |
 

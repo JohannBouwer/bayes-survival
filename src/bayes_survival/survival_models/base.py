@@ -1,4 +1,5 @@
 from __future__ import annotations
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import ClassVar
@@ -91,14 +92,22 @@ class BaseSurvivalModel(ABC):
                 )
         self.priors.update(priors)
 
-    def _prior(self, name: str, **extra_kwargs) -> pm.Distribution:
+    def _prior(
+        self, name: str, var_name: str | None = None, **extra_kwargs
+    ) -> pm.Distribution:
         """Instantiate a named prior inside the active model context.
 
         extra_kwargs are merged into the registered kwargs, allowing data-dependent
         parameters (e.g. shape=n_coef) to be injected at build time.
+
+        var_name overrides the PyMC variable name while still reading the prior
+        registered under `name`. Used where the sampled parameter is a
+        reparameterisation of the one the user configures — e.g. the cure models
+        sample an intercept defined at mean covariates and report the
+        back-transformed value under the original name.
         """
         dist_cls, kwargs = self.priors[name]
-        return dist_cls(name, **{**kwargs, **extra_kwargs})
+        return dist_cls(var_name or name, **{**kwargs, **extra_kwargs})
 
     @staticmethod
     def _augment_X(X: np.ndarray) -> np.ndarray:
@@ -164,7 +173,50 @@ class BaseSurvivalModel(ABC):
             self.idata = pm.sample(draws=draws, tune=tune, nuts_sampler=nuts_sampler, **sample_kwargs)
             if log_likelihood:
                 self._attach_log_likelihood()
+        self._warn_on_bad_diagnostics()
         return self
+
+    def _warn_on_bad_diagnostics(self, rhat_threshold: float = 1.01) -> None:
+        """Warn if the sampler did not converge.
+
+        Without this, a fit can return a posterior that was never explored and
+        nothing says so — the failure only surfaces later as an implausible
+        `az.loo` score or a nonsense prediction. Diagnostics must never break an
+        otherwise successful fit, so every failure path here is swallowed.
+        """
+        if self.idata is None:
+            return
+        name = type(self).__name__
+        problems: list[str] = []
+
+        try:
+            if "diverging" in getattr(self.idata, "sample_stats", {}):
+                n_div = int(self.idata.sample_stats["diverging"].values.sum())
+                if n_div:
+                    problems.append(f"{n_div} divergent transition(s)")
+        except Exception:  # pragma: no cover - diagnostics must not raise
+            pass
+
+        try:
+            summary = az.summary(self.idata, var_names=["~obs_loglik"], filter_vars="like")
+            worst_rhat = float(summary["r_hat"].max())
+            worst_ess = float(summary["ess_bulk"].min())
+            if worst_rhat > rhat_threshold:
+                problems.append(f"max r_hat = {worst_rhat:.2f}")
+            if worst_ess < 100:
+                problems.append(f"min bulk ESS = {worst_ess:.0f}")
+        except Exception:  # pragma: no cover - diagnostics must not raise
+            pass
+
+        if problems:
+            warnings.warn(
+                f"{name}: sampling diagnostics indicate the posterior may not be "
+                f"reliable ({'; '.join(problems)}). Inspect az.summary(model.idata) "
+                "before using these results. Centring or standardising covariates "
+                "often helps, as does tightening priors that conflict with the data.",
+                UserWarning,
+                stacklevel=3,
+            )
 
     def _attach_log_likelihood(self) -> None:
         """Add a pointwise ``log_likelihood`` group to ``self.idata``.

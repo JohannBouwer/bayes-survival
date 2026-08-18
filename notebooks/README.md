@@ -95,6 +95,6 @@ No model fitting is performed here. The goal is to build intuition before the mo
 - Introduces leave-one-out cross-validation: `elpd_loo` as a relative score, `p_loo` as effective parameters, and Pareto $k$ as the reliability diagnostic
 - Fits all seven models — three AFT, piecewise Cox, and three mixture cure — to one synthetic dataset and ranks them with `az.compare`, walking through every column of the output
 - Shows why `dse` matters more than `elpd_diff`: the top two models differ by about one standard error of their difference, so LOO identifies the right model *family* rather than a single winner
-- Uses a genuinely misbehaving fit (`WeibullCureModel` on this data: 246 divergences, hundreds of observations above the Pareto $k$ threshold) to show that `az.compare` ranks models it cannot be trusted on
+- Works through the diagnostics that have to pass before a ranking means anything — divergences, `r_hat`, and Pareto $k$ — and what to try when they do not
 - Reruns the whole comparison on the same data-generating process with the cure fraction removed, and the ranking changes — demonstrating that LOO responds to the data rather than rewarding complexity
 - Closes with the four conditions that make a comparison valid, none of which `az.compare` checks; the mechanics are in [notes/Model_Comparison.md](../notes/Model_Comparison.md)
