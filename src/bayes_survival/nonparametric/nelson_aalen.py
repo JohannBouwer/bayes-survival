@@ -8,6 +8,7 @@ import arviz as az
 import numpy as np
 from scipy.stats import gamma as GammaDist
 
+from bayes_survival._validation import validate_survival_inputs
 from bayes_survival.survival_models.base import SurvivalPrediction
 
 # Prior spec for conjugate Gamma model: name -> (alpha, beta)  [rate parameterisation]
@@ -116,8 +117,11 @@ class NelsonAalenModel:
         -------
         self
         """
-        t = np.asarray(t, dtype=float)
-        event = np.asarray(event, dtype=float)
+        # This estimator is well defined at t == 0, unlike the log-scale
+        # parametric models, so zero times are allowed here.
+        _, t, event = validate_survival_inputs(
+            t, event, require_positive_t=False, model_name=type(self).__name__
+        )
 
         self._risk_table = self._compute_risk_table(t, event)
 
@@ -147,6 +151,7 @@ class NelsonAalenModel:
         self,
         times: np.ndarray,
         n_samples: int = 2000,
+        random_seed: int | None = None,
     ) -> np.ndarray:
         """Draw cumulative hazard curve samples from the posterior.
 
@@ -156,6 +161,8 @@ class NelsonAalenModel:
             Time points at which to evaluate H(t).
         n_samples : int
             Number of posterior samples to draw.
+        random_seed : int, optional
+            Seed for the posterior draws; pass an int for reproducibility.
 
         Returns
         -------
@@ -172,6 +179,7 @@ class NelsonAalenModel:
             a=self._alpha_post,
             scale=1.0 / self._beta_post,
             size=(n_samples, len(self._risk_table.times)),
+            random_state=np.random.default_rng(random_seed),
         )
 
         event_times = self._risk_table.times  # type: ignore[union-attr]
@@ -187,6 +195,7 @@ class NelsonAalenModel:
         self,
         times: np.ndarray,
         n_samples: int = 2000,
+        random_seed: int | None = None,
     ) -> np.ndarray:
         """Draw survival curve samples from the posterior via S(t) = exp(-H(t)).
 
@@ -196,13 +205,17 @@ class NelsonAalenModel:
             Time points at which to evaluate S(t).
         n_samples : int
             Number of posterior samples to draw.
+        random_seed : int, optional
+            Seed for the posterior draws; pass an int for reproducibility.
 
         Returns
         -------
         np.ndarray of shape (n_samples, n_times)
             Each row is a survival curve drawn from the posterior.
         """
-        H_samples = self.sample_posterior_cumulative_hazard(times, n_samples=n_samples)
+        H_samples = self.sample_posterior_cumulative_hazard(
+            times, n_samples=n_samples, random_seed=random_seed
+        )
         return np.exp(-H_samples)
 
     def predict_cumulative_hazard(
@@ -210,6 +223,7 @@ class NelsonAalenModel:
         times: np.ndarray,
         hdi_prob: float = 0.94,
         n_samples: int = 2000,
+        random_seed: int | None = None,
     ) -> SurvivalPrediction:
         """Posterior cumulative hazard estimate at the given times.
 
@@ -221,6 +235,8 @@ class NelsonAalenModel:
             Probability mass within the highest-density interval.
         n_samples : int
             Number of posterior samples used for estimation.
+        random_seed : int, optional
+            Seed for the posterior draws; pass an int for reproducibility.
 
         Returns
         -------
@@ -230,7 +246,9 @@ class NelsonAalenModel:
         """
         self._check_fitted()
         times = np.asarray(times, dtype=float)
-        H_samples = self.sample_posterior_cumulative_hazard(times, n_samples=n_samples)
+        H_samples = self.sample_posterior_cumulative_hazard(
+            times, n_samples=n_samples, random_seed=random_seed
+        )
         # Expand to (n_samples, 1, n_times) — treat as single observation (no covariates)
         return self._aggregate(H_samples[:, np.newaxis, :], times, hdi_prob)
 
@@ -239,6 +257,7 @@ class NelsonAalenModel:
         times: np.ndarray,
         hdi_prob: float = 0.94,
         n_samples: int = 2000,
+        random_seed: int | None = None,
     ) -> SurvivalPrediction:
         """Posterior survival function estimate at the given times.
 
@@ -250,6 +269,8 @@ class NelsonAalenModel:
             Probability mass within the highest-density interval.
         n_samples : int
             Number of posterior samples used for estimation.
+        random_seed : int, optional
+            Seed for the posterior draws; pass an int for reproducibility.
 
         Returns
         -------
@@ -259,7 +280,9 @@ class NelsonAalenModel:
         """
         self._check_fitted()
         times = np.asarray(times, dtype=float)
-        S_samples = self.sample_posterior_survival(times, n_samples=n_samples)
+        S_samples = self.sample_posterior_survival(
+            times, n_samples=n_samples, random_seed=random_seed
+        )
         # Expand to (n_samples, 1, n_times) — treat as single observation (no covariates)
         return self._aggregate(S_samples[:, np.newaxis, :], times, hdi_prob)
 
@@ -268,6 +291,7 @@ class NelsonAalenModel:
         t: float,
         hdi_prob: float = 0.94,
         n_samples: int = 2000,
+        random_seed: int | None = None,
     ) -> SurvivalPrediction:
         """Posterior probability of surviving past time t.
 
@@ -279,6 +303,8 @@ class NelsonAalenModel:
             Probability mass within the highest-density interval.
         n_samples : int
             Number of posterior samples.
+        random_seed : int, optional
+            Seed for the posterior draws; pass an int for reproducibility.
 
         Returns
         -------
@@ -288,6 +314,7 @@ class NelsonAalenModel:
             times=np.array([t]),
             hdi_prob=hdi_prob,
             n_samples=n_samples,
+            random_seed=random_seed,
         )
 
     @property

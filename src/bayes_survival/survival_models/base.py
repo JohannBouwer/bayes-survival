@@ -1,4 +1,5 @@
 from __future__ import annotations
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import ClassVar
@@ -6,6 +7,8 @@ from typing import ClassVar
 import numpy as np
 import pymc as pm
 import arviz as az
+
+from bayes_survival._validation import validate_survival_inputs
 
 
 PriorSpec = dict[str, tuple[type, dict]]
@@ -89,19 +92,41 @@ class BaseSurvivalModel(ABC):
                 )
         self.priors.update(priors)
 
-    def _prior(self, name: str, **extra_kwargs) -> pm.Distribution:
+    def _prior(
+        self, name: str, var_name: str | None = None, **extra_kwargs
+    ) -> pm.Distribution:
         """Instantiate a named prior inside the active model context.
 
         extra_kwargs are merged into the registered kwargs, allowing data-dependent
         parameters (e.g. shape=n_coef) to be injected at build time.
+
+        var_name overrides the PyMC variable name while still reading the prior
+        registered under `name`. Used where the sampled parameter is a
+        reparameterisation of the one the user configures — e.g. the cure models
+        sample an intercept defined at mean covariates and report the
+        back-transformed value under the original name.
         """
         dist_cls, kwargs = self.priors[name]
-        return dist_cls(name, **{**kwargs, **extra_kwargs})
+        return dist_cls(var_name or name, **{**kwargs, **extra_kwargs})
 
     @staticmethod
     def _augment_X(X: np.ndarray) -> np.ndarray:
         """Prepend a column of ones (intercept) to X. Returns shape (n_obs, n_features + 1)."""
         return np.column_stack([np.ones(X.shape[0]), X])
+
+    def _check_n_features(self, X: np.ndarray) -> np.ndarray:
+        """Validate a prediction-time design matrix against the fitted one."""
+        X = np.atleast_2d(np.asarray(X, dtype=float))
+        if self._n_features is not None and X.shape[1] != self._n_features:
+            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
+        return X
+
+    @staticmethod
+    def _flatten_ppc(idata_ppc: az.InferenceData) -> np.ndarray:
+        """Flatten posterior-predictive "obs" draws to (n_chains * n_draws, n_obs)."""
+        obs = idata_ppc.posterior_predictive["obs"].values  # (chains, draws, n_obs)
+        n_chains, n_draws, n_obs = obs.shape
+        return obs.reshape(n_chains * n_draws, n_obs)
 
     @abstractmethod
     def build_model(
@@ -126,12 +151,86 @@ class BaseSurvivalModel(ABC):
         draws: int = 1000,
         tune: int = 1000,
         nuts_sampler: str = "nutpie",
+        log_likelihood: bool = True,
         **sample_kwargs,
     ) -> BaseSurvivalModel:
+        """Fit the model by MCMC.
+
+        Parameters
+        ----------
+        X : (n_obs, n_features) — raw covariates, no intercept column.
+        t : (n_obs,) — observed times, strictly positive.
+        event : (n_obs,) — 1 = event, 0 = right-censored.
+        log_likelihood : if True (default) attach a pointwise ``log_likelihood``
+            group to ``self.idata`` so ``az.loo`` / ``az.compare`` can be used.
+        **sample_kwargs : forwarded to ``pm.sample``.
+        """
+        X, t, event = validate_survival_inputs(
+            t, event, X, model_name=type(self).__name__
+        )
         self.model = self.build_model(X, t, event)
         with self.model:
             self.idata = pm.sample(draws=draws, tune=tune, nuts_sampler=nuts_sampler, **sample_kwargs)
+            if log_likelihood:
+                self._attach_log_likelihood()
+        self._warn_on_bad_diagnostics()
         return self
+
+    def _warn_on_bad_diagnostics(self, rhat_threshold: float = 1.01) -> None:
+        """Warn if the sampler did not converge.
+
+        Without this, a fit can return a posterior that was never explored and
+        nothing says so — the failure only surfaces later as an implausible
+        `az.loo` score or a nonsense prediction. Diagnostics must never break an
+        otherwise successful fit, so every failure path here is swallowed.
+        """
+        if self.idata is None:
+            return
+        name = type(self).__name__
+        problems: list[str] = []
+
+        try:
+            if "diverging" in getattr(self.idata, "sample_stats", {}):
+                n_div = int(self.idata.sample_stats["diverging"].values.sum())
+                if n_div:
+                    problems.append(f"{n_div} divergent transition(s)")
+        except Exception:  # pragma: no cover - diagnostics must not raise
+            pass
+
+        try:
+            summary = az.summary(self.idata, var_names=["~obs_loglik"], filter_vars="like")
+            worst_rhat = float(summary["r_hat"].max())
+            worst_ess = float(summary["ess_bulk"].min())
+            if worst_rhat > rhat_threshold:
+                problems.append(f"max r_hat = {worst_rhat:.2f}")
+            if worst_ess < 100:
+                problems.append(f"min bulk ESS = {worst_ess:.0f}")
+        except Exception:  # pragma: no cover - diagnostics must not raise
+            pass
+
+        if problems:
+            warnings.warn(
+                f"{name}: sampling diagnostics indicate the posterior may not be "
+                f"reliable ({'; '.join(problems)}). Inspect az.summary(model.idata) "
+                "before using these results. Centring or standardising covariates "
+                "often helps, as does tightening priors that conflict with the data.",
+                UserWarning,
+                stacklevel=3,
+            )
+
+    def _attach_log_likelihood(self) -> None:
+        """Add a pointwise ``log_likelihood`` group to ``self.idata``.
+
+        Must run inside ``fit`` — ``pm.compute_log_likelihood`` re-evaluates the
+        graph against the model's *current* ``pm.Data`` contents, and
+        ``sample_predicted_event_times`` overwrites those via ``pm.set_data``.
+
+        Note this cannot be delegated to ``idata_kwargs={"log_likelihood": True}``:
+        that flag is silently ignored by the external-sampler path, and this
+        library defaults to ``nuts_sampler="nutpie"``.
+        """
+        assert self.model is not None and self.idata is not None
+        pm.compute_log_likelihood(self.idata, model=self.model, progressbar=False)
 
     @abstractmethod
     def _predict_survival_samples(
@@ -222,6 +321,7 @@ class BaseSurvivalModel(ABC):
         self,
         X: np.ndarray,
         return_idata: bool = False,
+        random_seed: int | None = None,
         **sample_kwargs,
     ) -> np.ndarray | az.InferenceData:
         """Draw posterior-predictive event times for new observations.
@@ -233,6 +333,7 @@ class BaseSurvivalModel(ABC):
         ----------
         X : (n_obs, n_features) — raw covariates, no intercept column.
         return_idata : if True, return the raw az.InferenceData object.
+        random_seed : seed for the predictive draws; pass an int for reproducibility.
         **sample_kwargs : forwarded to pm.sample_posterior_predictive.
 
         Returns
@@ -241,8 +342,7 @@ class BaseSurvivalModel(ABC):
         """
         self._check_fitted()
         assert self.model is not None  # guaranteed by _check_fitted
-        if self._n_features is not None and X.shape[1] != self._n_features:
-            raise ValueError(f"Expected {self._n_features} features, got {X.shape[1]}")
+        X = self._check_n_features(X)
 
         n_obs = X.shape[0]
         X_aug = self._augment_X(X)
@@ -255,15 +355,14 @@ class BaseSurvivalModel(ABC):
                 self.idata,
                 var_names=["obs"],
                 extend_inferencedata=False,
+                random_seed=random_seed,
                 **sample_kwargs,
             )
 
         if return_idata:
             return idata_ppc
 
-        obs = idata_ppc.posterior_predictive["obs"].values  # (chains, draws, n_obs)
-        n_chains, n_draws, _ = obs.shape
-        return obs.reshape(n_chains * n_draws, n_obs)  # (n_samples, n_obs)
+        return self._flatten_ppc(idata_ppc)  # (n_samples, n_obs)
 
     def _check_fitted(self) -> None:
         if self.idata is None or self.model is None:

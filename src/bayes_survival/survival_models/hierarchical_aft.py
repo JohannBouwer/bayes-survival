@@ -178,6 +178,7 @@ class HierarchicalWeibullAFTModel(WeibullAFTModel):
         draws: int = 1000,
         tune: int = 1000,
         nuts_sampler: str = "nutpie",
+        log_likelihood: bool = True,
         **sample_kwargs,
     ) -> HierarchicalWeibullAFTModel:
         if not isinstance(X, pd.DataFrame):
@@ -193,6 +194,7 @@ class HierarchicalWeibullAFTModel(WeibullAFTModel):
             draws=draws,
             tune=tune,
             nuts_sampler=nuts_sampler,
+            log_likelihood=log_likelihood,
             **sample_kwargs,
         )
 
@@ -242,11 +244,12 @@ class HierarchicalWeibullAFTModel(WeibullAFTModel):
         self,
         X: pd.DataFrame | np.ndarray,
         return_idata: bool = False,
+        random_seed: int | None = None,
         **sample_kwargs,
     ) -> np.ndarray:
         arr = _extract_array(X, self.feature_names_ or [])
         return super().sample_predicted_event_times(
-            arr, return_idata=return_idata, **sample_kwargs
+            arr, return_idata=return_idata, random_seed=random_seed, **sample_kwargs
         )
 
 
@@ -274,6 +277,7 @@ class HierarchicalLogNormalAFTModel(LogNormalAFTModel):
         draws: int = 1000,
         tune: int = 1000,
         nuts_sampler: str = "nutpie",
+        log_likelihood: bool = True,
         **sample_kwargs,
     ) -> HierarchicalLogNormalAFTModel:
         if not isinstance(X, pd.DataFrame):
@@ -289,6 +293,7 @@ class HierarchicalLogNormalAFTModel(LogNormalAFTModel):
             draws=draws,
             tune=tune,
             nuts_sampler=nuts_sampler,
+            log_likelihood=log_likelihood,
             **sample_kwargs,
         )
 
@@ -338,11 +343,12 @@ class HierarchicalLogNormalAFTModel(LogNormalAFTModel):
         self,
         X: pd.DataFrame | np.ndarray,
         return_idata: bool = False,
+        random_seed: int | None = None,
         **sample_kwargs,
     ) -> np.ndarray:
         arr = _extract_array(X, self.feature_names_ or [])
         return super().sample_predicted_event_times(
-            arr, return_idata=return_idata, **sample_kwargs
+            arr, return_idata=return_idata, random_seed=random_seed, **sample_kwargs
         )
 
 
@@ -370,6 +376,7 @@ class HierarchicalLogLogisticAFTModel(LogLogisticAFTModel):
         draws: int = 1000,
         tune: int = 1000,
         nuts_sampler: str = "nutpie",
+        log_likelihood: bool = True,
         **sample_kwargs,
     ) -> HierarchicalLogLogisticAFTModel:
         if not isinstance(X, pd.DataFrame):
@@ -385,6 +392,7 @@ class HierarchicalLogLogisticAFTModel(LogLogisticAFTModel):
             draws=draws,
             tune=tune,
             nuts_sampler=nuts_sampler,
+            log_likelihood=log_likelihood,
             **sample_kwargs,
         )
 
@@ -398,6 +406,9 @@ class HierarchicalLogLogisticAFTModel(LogLogisticAFTModel):
         X_aug = self._augment_X(X)
         log_t = np.log(t).astype(float)
         log_upper = np.where(event == 1, np.inf, log_t)
+        # Needed by LogLogisticAFTModel._attach_log_likelihood to score on the
+        # time scale rather than the log-time scale.
+        self._store_jacobian(log_t, event)
 
         with pm.Model() as model:
             X_data = pm.Data("X_aug", X_aug)
@@ -436,9 +447,10 @@ class HierarchicalLogLogisticAFTModel(LogLogisticAFTModel):
         self,
         X: pd.DataFrame | np.ndarray,
         return_idata: bool = False,
+        random_seed: int | None = None,
         **sample_kwargs,
     ) -> np.ndarray:
         arr = _extract_array(X, self.feature_names_ or [])
         return super().sample_predicted_event_times(
-            arr, return_idata=return_idata, **sample_kwargs
+            arr, return_idata=return_idata, random_seed=random_seed, **sample_kwargs
         )
