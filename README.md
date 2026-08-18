@@ -544,6 +544,12 @@ az.compare({"weibull_aft": weibull.idata, "piecewise_cox": cox.idata})
 
 Pass `fit(..., log_likelihood=False)` to skip the extra computation.
 
+[`notebooks/Model_Comparison_Introduction.ipynb`](notebooks/Model_Comparison_Introduction.ipynb)
+walks through the full workflow — reading every column of the comparison table, spotting a fit
+whose diagnostics make it untrustworthy, and watching the ranking change when the data changes.
+The mechanics that make the scores comparable across model families are in
+[`notes/Model_Comparison.md`](notes/Model_Comparison.md).
+
 ## Future Work
 
 ### Additional Mixture Cure Models
