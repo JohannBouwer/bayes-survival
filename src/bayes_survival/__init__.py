@@ -1,3 +1,11 @@
+from .metrics import (
+    antolini_concordance,
+    calibration_table,
+    censoring_distribution,
+    evaluate,
+    harrell_concordance,
+    ipcw_brier,
+)
 from .survival_models import (
     BaseSurvivalModel,
     HierarchySpec,
@@ -30,4 +38,11 @@ __all__ = [
     "LogNormalCureModel",
     "WeibullCureModel",
     "LogLogisticCureModel",
+    # held-out evaluation metrics
+    "censoring_distribution",
+    "harrell_concordance",
+    "antolini_concordance",
+    "ipcw_brier",
+    "calibration_table",
+    "evaluate",
 ]
