@@ -15,6 +15,7 @@ dependencies = [
     "pandas>=2.0",
     "scipy>=1.11",
     "arviz>=0.20,<1.0",
+    "lifelines>=0.29",
     "nutpie[pymc]>=0.14",
 ]
 
@@ -32,7 +33,6 @@ notebook = [
     "ipykernel>=6.0",
     "ipywidgets>=8.0",
     "watermark>=2.4",
-    "lifelines>=0.29",
     "matplotlib>=3.8",
     "statsmodels>=0.14.6",
     "scikit-learn>=1.8.0",
