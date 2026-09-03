@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Bayesian survival analysis models built on PyMC"
 readme = "README.md"
 authors = [{ name = "Johann", email = "bouwer2608@gmail.com" }]
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 # Only what the library itself imports, plus nutpie because fit() defaults to
 # nuts_sampler="nutpie". The [pymc] extra is what supplies numba for that
