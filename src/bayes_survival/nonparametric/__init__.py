@@ -1,2 +1,7 @@
 from bayes_survival.nonparametric.kaplan_meier import KaplanMeierModel
 from bayes_survival.nonparametric.nelson_aalen import NelsonAalenModel
+
+__all__ = [
+    "KaplanMeierModel",
+    "NelsonAalenModel",
+]
