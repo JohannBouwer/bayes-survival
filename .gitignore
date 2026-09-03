@@ -179,3 +179,9 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+# Downloaded / derived datasets (regenerate with data/prepare_ecommerce_returns.py)
+data/*.csv
+
+# Sampled posteriors (~99 MB each; regenerate with scripts/support2_hierarchical.py)
+data/support2_fits/
+*.nc
