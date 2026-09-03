@@ -98,3 +98,22 @@ No model fitting is performed here. The goal is to build intuition before the mo
 - Works through the diagnostics that have to pass before a ranking means anything — divergences, `r_hat`, and Pareto $k$ — and what to try when they do not
 - Reruns the whole comparison on the same data-generating process with the cure fraction removed, and the ranking changes — demonstrating that LOO responds to the data rather than rewarding complexity
 - Closes with the four conditions that make a comparison valid, none of which `az.compare` checks; the mechanics are in [notes/Model_Comparison.md](../notes/Model_Comparison.md)
+
+---
+
+## 9. [SUPPORT2_AFT_Comparison.ipynb](SUPPORT2_AFT_Comparison.ipynb)
+
+**Real data, end to end — model selection and held-out validation on a published benchmark.**
+
+Every notebook above runs on synthetic data or a small textbook dataset, which can only show that a
+model recovers what was put into it. This one runs on **SUPPORT2** — 9,105 seriously ill hospitalised
+adults, 68% mortality, follow-up 3–2,029 days — so the results can be checked against numbers other
+people have published.
+
+- Builds a leakage-free modelling table with [`scripts/prepare_support2.py`](../scripts/prepare_support2.py), which downloads SUPPORT2 and documents why each excluded column is excluded — the study ships its own predicted survival, physicians' prognoses, and post-baseline outcomes, all of which would flatter the C-index meaninglessly
+- Fits the three flat parametric AFT families under matched priors and selects between them with `az.compare`, checking divergences, `r_hat`, and Pareto $k$ before reading the ranking
+- Validates the winner three independent ways: against `lifelines` maximum likelihood estimates, against the published literature, and against Kaplan-Meier within predicted-risk quintiles
+- **Reproduces the published benchmark**: on the same 14 covariates and the same concordance definition used by Kvamme, Borgan & Scheel (2019), [JMLR 20(129)](https://jmlr.org/papers/volume20/18-424/18-424.pdf), the pipeline recovers their classical-Cox C-td of 0.598 to within 0.002
+- Uses the held-out metrics in [`bayes_survival.metrics`](../src/bayes_survival/metrics.py) — Antolini's $C^{td}$, IPCW Brier, and a Kaplan-Meier calibration table — and shows where the benchmark covariate set systematically miscalibrates by disease group, which concordance alone is blind to
+
+The notebook fetches and builds its own data on first run; no manual setup is required.
