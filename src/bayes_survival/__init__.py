@@ -6,6 +6,10 @@ from .metrics import (
     harrell_concordance,
     ipcw_brier,
 )
+from .nonparametric import (
+    KaplanMeierModel,
+    NelsonAalenModel,
+)
 from .survival_models import (
     BaseSurvivalModel,
     HierarchySpec,
@@ -28,6 +32,9 @@ __all__ = [
     "HierarchySpec",
     "PriorSpec",
     "SurvivalPrediction",
+    # nonparametric
+    "KaplanMeierModel",
+    "NelsonAalenModel",
     "WeibullAFTModel",
     "LogNormalAFTModel",
     "LogLogisticAFTModel",
